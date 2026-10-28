@@ -1099,29 +1099,40 @@ void latD_lanzar(lat_mv *mv, int errcode) {
   }
 }
 
-LATINO_API void latC_error(lat_mv *mv, const char *fmt, ...) {
-  char buffer[MAX_INPUT_SIZE];
-  va_list args;
-  va_start(args, fmt);
-  vsprintf(buffer, fmt, args);
-  va_end(args);
-  char *info = malloc(MAX_INPUT_SIZE);
-  if (strstr(buffer, "%") != NULL) {
-    snprintf(info, MAX_INPUT_SIZE, LAT_ERROR_FMT, mv->nombre_archivo, mv->nlin,
-             mv->ncol);
-    latC_apilar(mv, latC_crear_cadena(mv, info));
-    latC_apilar(mv, latC_crear_cadena(mv, buffer));
-    str_concatenar(mv);
-    lat_objeto *err = latC_desapilar(mv);
-    fprintf(stderr, "%s\n", latC_astring(mv, err));
-  } else {
-    snprintf(info, MAX_INPUT_SIZE, LAT_ERROR_FMT, mv->nombre_archivo, mv->nlin,
-             mv->ncol, buffer);
-    fprintf(stderr, "%s\n", info);
-  }
-  // FIXME: Si esta en REPL que no finalice
-  latD_lanzar(mv, LAT_ERRRUN);
+
+LATINO_API void latC_error(lat_mv *mv, const char *fmt, ...)
+{
+    char buffer[MAX_INPUT_SIZE];
+    va_list args;
+
+    if (mv == NULL) {
+        fputs("Latino-Core: error sin maquina virtual\n", stderr);
+        abort();
+    }
+
+    if (fmt == NULL) {
+        fmt = "Error de ejecucion sin descripcion";
+    }
+
+    va_start(args, fmt);
+    int resultado = vsnprintf(buffer, sizeof(buffer), fmt, args);
+    va_end(args);
+
+    if (resultado < 0) {
+        snprintf(buffer, sizeof(buffer),
+                 "%s", "Error al formatear diagnostico");
+    }
+
+    const char *archivo = mv->nombre_archivo
+                        ? mv->nombre_archivo
+                        : "<desconocido>";
+
+    fprintf(stderr, LAT_ERROR_FMT,
+            archivo, mv->nlin, mv->ncol, buffer);
+
+    latD_lanzar(mv, LAT_ERRRUN);
 }
+
 
 LATINO_API int latC_llamar_funcion(lat_mv *mv, lat_objeto *func) {
   // printf("latC_llamar_funcion\n");
