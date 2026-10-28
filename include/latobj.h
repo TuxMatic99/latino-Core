@@ -330,6 +330,9 @@ lat_objeto *latO_contexto_crear(lat_mv *mv);
    No usar una funcion en otra VM ni despues de destruir su VM propietaria. */
 void latO_registrar_funcion(lat_mv *mv, lat_funcion *fun);
 void latO_liberar_funciones(lat_mv *mv);
+lat_objeto *latO_retener_constante(lat_mv *mv, lat_objeto *o);
+void latO_liberar_constantes(lat_mv *mv);
+void latS_liberar_cadenas(lat_mv *mv);
 void latO_destruir(lat_mv *mv, lat_objeto *o);
 lat_objeto *latO_clonar(lat_mv *mv, lat_objeto *o);
 int latO_comparar(lat_mv *mv, lat_objeto *lhs, lat_objeto *rhs);

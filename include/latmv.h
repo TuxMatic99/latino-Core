@@ -193,6 +193,7 @@ typedef struct lat_mv {
   /* Propiedad de bytecode hasta el cierre de esta VM. ABI: recompilar clientes. */
   struct lat_funcion_registro *funciones_propias;
   struct lat_modulo_registro *modulos_propios;
+  struct lat_constante_registro *constantes_propias;
 } lat_mv;
 
 #define lati_numUmin(a) (-(a))

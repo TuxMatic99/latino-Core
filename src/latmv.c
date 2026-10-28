@@ -475,6 +475,7 @@ LATINO_API lat_mv *latC_crear_mv()
   mv->memoria_usada = 0;
   mv->funciones_propias = NULL;
   mv->modulos_propios = NULL;
+  mv->constantes_propias = NULL;
 #if DEPURAR_MEM
   printf("------------------------------------------------------------\n");
   printf("inicio latC_crear_mv.mv->memoria_usada: %zu\n", mv->memoria_usada);
@@ -553,6 +554,8 @@ LATINO_API void latC_destruir_mv(lat_mv *mv)
   mv->label_ctx = NULL;
   latH_liberar_modulos(mv);
   latO_liberar_funciones(mv);
+  latO_liberar_constantes(mv);
+  latS_liberar_cadenas(mv);
   latM_liberar(mv, mv->global->strt.hash);
   latM_liberar(mv, mv->global);
 #if DEPURAR_MEM

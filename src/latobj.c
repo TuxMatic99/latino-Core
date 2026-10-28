@@ -71,6 +71,58 @@ void latO_liberar_funciones(lat_mv *mv) {
 }
 
 lat_objeto latO_nulo_ = {{NULL}, T_NULL};
+/* Los metadatos del compilador se comparten con instrucciones y contextos.
+   Solo sus envoltorios pertenecen a este registro (GC desactivado). */
+struct lat_constante_registro {
+  lat_objeto *objeto;
+  struct lat_constante_registro *siguiente;
+};
+
+static bool constante_registrada(lat_mv *mv, lat_objeto *o) {
+  if (!mv) return false;
+  for (struct lat_constante_registro *r = mv->constantes_propias; r; r = r->siguiente)
+    if (r->objeto == o) return true;
+  return false;
+}
+
+lat_objeto *latO_retener_constante(lat_mv *mv, lat_objeto *o) {
+#if !HABILITAR_GC
+  if (mv && o && o != latO_nulo && o != latO_verdadero && o != latO_falso &&
+      !constante_registrada(mv, o)) {
+    struct lat_constante_registro *r = latM_asignar(mv, sizeof(*r));
+    r->objeto = o;
+    r->siguiente = mv->constantes_propias;
+    mv->constantes_propias = r;
+  }
+#endif
+  return o;
+}
+
+void latO_liberar_constantes(lat_mv *mv) {
+  if (!mv) return;
+  while (mv->constantes_propias) {
+    struct lat_constante_registro *r = mv->constantes_propias;
+    mv->constantes_propias = r->siguiente;
+    latM_liberar(mv, r->objeto);
+    latM_liberar(mv, r);
+  }
+}
+
+void latS_liberar_cadenas(lat_mv *mv) {
+#if !HABILITAR_GC
+  stringtable *tb = &mv->global->strt;
+  for (int i = 0; i < tb->size; ++i) {
+    lat_gcobjeto *p = tb->hash[i];
+    while (p) {
+      lat_gcobjeto *siguiente = p->gch.next;
+      latM_liberar(mv, p);
+      p = siguiente;
+    }
+    tb->hash[i] = NULL;
+  }
+  tb->nuse = 0;
+#endif
+}
 lat_objeto latO_verdadero_ = {.val.logico = 1, .tipo = T_BOOL};
 lat_objeto latO_falso_ = {.val.logico = 0, .tipo = T_BOOL};
 
@@ -200,6 +252,7 @@ lat_objeto *latO_crear_cfuncion(lat_mv *mv) {
 void latO_destruir(lat_mv *mv, lat_objeto *o) {
   if (o == NULL)
     return;
+  if (constante_registrada(mv, o)) return;
   switch (o->tipo) {
   case T_CONTEXT:
     latH_limpiar(mv, getCtx(o));
@@ -220,9 +273,15 @@ void latO_destruir(lat_mv *mv, lat_objeto *o) {
   case T_DIC:
     latH_destruir(mv, latC_checar_dic(mv, o));
     break;
+#if !HABILITAR_GC
+  case T_LABEL:
+#endif
   case T_STR: {
+#if HABILITAR_GC
     lat_cadena *str = (lat_cadena *)getCadena(o);
     latM_liberar(mv, str);
+#endif
+    /* Sin GC, las cadenas internadas pertenecen a strt hasta cerrar la VM. */
   } break;
   case T_FUN: {
     lat_funcion *fun = getFun(o);
