@@ -190,6 +190,9 @@ typedef struct lat_mv {
   bool dbg_super_active;         /* Instrumentación activa para super() */
   lat_objeto *dbg_target_ctor;   /* Constructor padre objetivo */
   int dbg_super_depth;           /* Profundidad de ejecución del ctor padre */
+  /* Propiedad de bytecode hasta el cierre de esta VM. ABI: recompilar clientes. */
+  struct lat_funcion_registro *funciones_propias;
+  struct lat_modulo_registro *modulos_propios;
 } lat_mv;
 
 #define lati_numUmin(a) (-(a))

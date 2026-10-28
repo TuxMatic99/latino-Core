@@ -29,6 +29,37 @@ THE SOFTWARE.
 #include <string.h>
 #include <stdint.h>
 
+struct lat_modulo_registro {
+  hash_map *dic;
+  struct lat_modulo_registro *siguiente;
+};
+
+static bool modulo_registrado(lat_mv *mv, hash_map *dic) {
+  if (!mv) return false;
+  for (struct lat_modulo_registro *r = mv->modulos_propios; r; r = r->siguiente)
+    if (r->dic == dic) return true;
+  return false;
+}
+
+void latH_registrar_modulo(lat_mv *mv, hash_map *dic) {
+  if (!mv || !dic || modulo_registrado(mv, dic)) return;
+  struct lat_modulo_registro *r = latM_asignar(mv, sizeof(*r));
+  r->dic = dic;
+  r->siguiente = mv->modulos_propios;
+  mv->modulos_propios = r;
+}
+
+void latH_liberar_modulos(lat_mv *mv) {
+  if (!mv) return;
+  while (mv->modulos_propios) {
+    struct lat_modulo_registro *r = mv->modulos_propios;
+    mv->modulos_propios = r->siguiente;
+    /* Desvincular antes de limpiar; no destruir payloads compartidos. */
+    latH_limpiar(mv, r->dic);
+    latM_liberar(mv, r);
+  }
+}
+
 /* FNV-1a hash algorithm constants */
 #define FNV_OFFSET_BASIS 2166136261u
 #define FNV_PRIME 16777619u
@@ -173,15 +204,31 @@ LATINO_API void latH_asignar(lat_mv *mv, hash_map *m, const char *key,
 }
 
 LATINO_API void latH_limpiar(lat_mv *mv, hash_map *dic) {
-  size_t i;
-  for (i = 0; i < dic->capacity; i++) {
-    dic->buckets[i] = NULL;
+  if (dic == NULL) return;
+  if (modulo_registrado(mv, dic)) return;
+  for (size_t i = 0; i < dic->capacity; i++) {
+    lista *bucket = dic->buckets[i];
+    if (bucket == NULL) continue;
+    LIST_FOREACH(bucket, primero, siguiente, cur) {
+      hash_val *entrada = (hash_val *)cur->valor;
+      if (entrada == NULL) continue;
+      /* latH_asignar reserva un envoltorio propio por entrada. Su contenido
+         puede compartir cadenas, listas o funciones con otros contextos:
+         NO llamar a latO_destruir sobre ese contenido. Con GC habilitado,
+         el envoltorio permanece a cargo del registro del recolector. */
+#if !HABILITAR_GC
+      latM_liberar(mv, entrada->valor);
+#endif
+      latM_liberar(mv, entrada);
+    }
+    latL_destruir(mv, bucket);
   }
   latM_liberar(mv, dic->buckets);
   latM_liberar(mv, dic);
 }
 
 LATINO_API void latH_destruir(lat_mv *mv, hash_map *dic) {
+  if (dic == NULL || modulo_registrado(mv, dic)) return;
   size_t i;
   for (i = 0; i < dic->capacity; i++) {
     lista *list = dic->buckets[i];

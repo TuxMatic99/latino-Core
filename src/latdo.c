@@ -728,7 +728,9 @@ static int ast_analizar(lat_mv *mv, ast *nodo, lat_bytecode *codigo, int i) {
     lat_objeto *o = latC_crear_cadena(mv, fun->nombre->valor->val.cadena);
     o->marca = 0;
     f->nparams = contar_num_parargs(fun->params, NODO_FUNCION_PARAMETROS);
-    f->nombre = strdup(fun->nombre->valor->val.cadena);
+    getFun(f)->nombre = strdup(fun->nombre->valor->val.cadena);
+    if (!getFun(f)->nombre) latC_error(mv, "Memoria virtual agotada");
+    f->nombre = getFun(f)->nombre;
     dbc(STORE_NAME, 0, 0, o, nodo->nlin, nodo->ncol, mv->nombre_archivo);
     if (mv->enClase) {
       // Insertar el método en el diccionario de clase __clase_dict__
@@ -881,7 +883,9 @@ static int ast_analizar(lat_mv *mv, ast *nodo, lat_bytecode *codigo, int i) {
     lat_objeto *o = latC_crear_cadena(mv, fun->nombre->valor->val.cadena);
     o->marca = 0;
     f->es_clase = true;
-    f->nombre = strdup(fun->nombre->valor->val.cadena);
+    getFun(f)->nombre = strdup(fun->nombre->valor->val.cadena);
+    if (!getFun(f)->nombre) latC_error(mv, "Memoria virtual agotada");
+    f->nombre = getFun(f)->nombre;
     dbc(STORE_NAME, 0, 0, o, nodo->nlin, nodo->ncol, mv->nombre_archivo);
     mv->enClase = false;
   } break;

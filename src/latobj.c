@@ -32,6 +32,44 @@ THE SOFTWARE.
 #include "latmem.h"
 #include "latobj.h"
 
+/* Los envoltorios de T_FUN se copian sin contar referencias. Por ello el
+   payload se conserva hasta el cierre de la VM, no hasta destruir una copia.
+   Este registro NO es un GC de objetos ni recorre metadatos del bytecode. */
+struct lat_funcion_registro {
+  lat_funcion *funcion;
+  struct lat_funcion_registro *siguiente;
+};
+
+static bool funcion_registrada(lat_mv *mv, lat_funcion *fun) {
+  if (!mv) return false;
+  for (struct lat_funcion_registro *r = mv->funciones_propias; r; r = r->siguiente)
+    if (r->funcion == fun) return true;
+  return false;
+}
+
+void latO_registrar_funcion(lat_mv *mv, lat_funcion *fun) {
+  if (!mv || !fun || funcion_registrada(mv, fun)) return;
+  struct lat_funcion_registro *r = latM_asignar(mv, sizeof(*r));
+  r->funcion = fun;
+  r->siguiente = mv->funciones_propias;
+  mv->funciones_propias = r;
+}
+
+void latO_liberar_funciones(lat_mv *mv) {
+  if (!mv) return;
+  struct lat_funcion_registro *r = mv->funciones_propias;
+  mv->funciones_propias = NULL;
+  while (r) {
+    struct lat_funcion_registro *siguiente = r->siguiente;
+    /* nombre se reserva con strdup en el compilador (no latM_asignar). */
+    free(r->funcion->nombre);
+    latM_liberar(mv, r->funcion->codigo);
+    latM_liberar(mv, r->funcion);
+    latM_liberar(mv, r);
+    r = siguiente;
+  }
+}
+
 lat_objeto latO_nulo_ = {{NULL}, T_NULL};
 lat_objeto latO_verdadero_ = {.val.logico = 1, .tipo = T_BOOL};
 lat_objeto latO_falso_ = {.val.logico = 0, .tipo = T_BOOL};
@@ -188,9 +226,11 @@ void latO_destruir(lat_mv *mv, lat_objeto *o) {
   } break;
   case T_FUN: {
     lat_funcion *fun = getFun(o);
-    lat_bytecode *inslist = fun->codigo;
-    latM_liberar(mv, inslist);
-    latM_liberar(mv, fun);
+    if (!funcion_registrada(mv, fun)) {
+      /* Compatibilidad con payloads externos no registrados. */
+      latM_liberar(mv, fun->codigo);
+      latM_liberar(mv, fun);
+    }
   } break;
   case T_CFUN: {
     ;

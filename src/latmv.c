@@ -324,6 +324,8 @@ static lat_objeto *obtener_contexto(lat_mv *mv) { return mv->contexto_actual; }
 
 lat_objeto *obtener_contexto_global(lat_mv *mv) { return mv->contexto[0]; }
 
+static void latMV_cache_invalidate(lat_mv *mv);
+
 static void apilar_contexto(lat_mv *mv, lat_objeto *ctx)
 {
   if (mv->ptrctx < 0 ||
@@ -337,6 +339,8 @@ static void apilar_contexto(lat_mv *mv, lat_objeto *ctx)
   mv->contexto[mv->ptrctx + 1] = latO_clonar(mv, mv->contexto[mv->ptrctx]);
   mv->ptrctx++;
   mv->contexto_actual = mv->contexto[mv->ptrctx];
+  /* La profundidad puede reutilizarse para un contexto diferente. */
+  latMV_cache_invalidate(mv);
 }
 
 static void desapilar_contexto(lat_mv *mv)
@@ -347,7 +351,11 @@ static void desapilar_contexto(lat_mv *mv)
            "Pila de contextos vacia");
     exit(EXIT_FAILURE);
   }
-  latO_destruir(mv, mv->contexto[mv->ptrctx--]);
+  /* El cache contiene punteros prestados a los envoltorios del contexto. */
+  latMV_cache_invalidate(mv);
+  latO_destruir(mv, mv->contexto[mv->ptrctx]);
+  mv->contexto[mv->ptrctx] = NULL;
+  mv->ptrctx--;
   mv->contexto_actual = mv->contexto[mv->ptrctx];
 }
 
@@ -423,14 +431,23 @@ LATINO_API void latC_abrir_liblatino(lat_mv *mv, const char *nombre_lib,
       cfun->nombre = funs->nombre;
       cfun->nparams = funs->nparams;
       latO_asignar_ctx(mv, ctx, funs->nombre, cfun);
+#if !HABILITAR_GC
+      /* La tabla guarda su propio envoltorio; nombre/cfun son prestados. */
+      latM_liberar(mv, cfun);
+#endif
     }
   }
   else
   {
     lat_objeto *mod = latO_obtener_contexto(mv, ctx, nombre_lib);
-    if (mod == NULL)
+    bool modulo_nuevo = mod == NULL;
+    if (modulo_nuevo)
     {
       mod = latC_crear_dic(mv, latH_crear(mv));
+#if !HABILITAR_GC
+      /* Los contextos copian el envoltorio, no la tabla del modulo. */
+      latH_registrar_modulo(mv, getDic(mod));
+#endif
       mod->marca = 0;
     }
     for (; funs->nombre; funs++)
@@ -439,8 +456,16 @@ LATINO_API void latC_abrir_liblatino(lat_mv *mv, const char *nombre_lib,
       cfun->nombre = funs->nombre;
       cfun->nparams = funs->nparams;
       latH_asignar(mv, latC_checar_dic(mv, mod), funs->nombre, cfun);
+#if !HABILITAR_GC
+      latM_liberar(mv, cfun);
+#endif
     }
     latO_asignar_ctx(mv, ctx, nombre_lib, mod);
+#if !HABILITAR_GC
+    /* Solo el temporal creado aqui; un modulo existente es prestado.
+       No destruir el diccionario, compartido con la entrada del contexto. */
+    if (modulo_nuevo) latM_liberar(mv, mod);
+#endif
   }
 }
 
@@ -448,6 +473,8 @@ LATINO_API lat_mv *latC_crear_mv()
 {
   lat_mv *mv = (lat_mv *)malloc(sizeof(lat_mv));
   mv->memoria_usada = 0;
+  mv->funciones_propias = NULL;
+  mv->modulos_propios = NULL;
 #if DEPURAR_MEM
   printf("------------------------------------------------------------\n");
   printf("inicio latC_crear_mv.mv->memoria_usada: %zu\n", mv->memoria_usada);
@@ -520,6 +547,12 @@ LATINO_API void latC_destruir_mv(lat_mv *mv)
   latO_destruir(mv, mv->global->gc_objetos);
 #endif
   latO_destruir(mv, mv->contexto[0]);
+  /* Contexto independiente creado junto con el contexto global. Su limpieza
+     libera los envoltorios, conservando los recursos compartidos. */
+  latO_destruir(mv, mv->label_ctx);
+  mv->label_ctx = NULL;
+  latH_liberar_modulos(mv);
+  latO_liberar_funciones(mv);
   latM_liberar(mv, mv->global->strt.hash);
   latM_liberar(mv, mv->global);
 #if DEPURAR_MEM
@@ -666,6 +699,8 @@ LATINO_API lat_objeto *latC_crear_funcion(lat_mv *mv, lat_bytecode *inslist,
   printf("latC_crear_funcion.fval: %p\n", fval);
 #endif
   fval->codigo = inslist;
+  fval->ninst = ninst;
+  latO_registrar_funcion(mv, fval);
   setFun(ret, fval);
   ret->ninst = ninst;
   return ret;
