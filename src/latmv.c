@@ -326,7 +326,9 @@ lat_objeto *obtener_contexto_global(lat_mv *mv) { return mv->contexto[0]; }
 
 static void apilar_contexto(lat_mv *mv, lat_objeto *ctx)
 {
-  if (mv->ptrctx >= MAX_STACK_CONTEXT_SIZE)
+  if (mv->ptrctx < 0 ||
+      (size_t)mv->ptrctx >=
+          sizeof(mv->contexto) / sizeof(mv->contexto[0]) - 1)
   {
     printf(LAT_ERROR_FMT, mv->nombre_archivo, mv->nlin, mv->ncol,
            "Desborde de la pila de contextos");
@@ -471,7 +473,7 @@ LATINO_API lat_mv *latC_crear_mv()
   mv->ptrprevio = 1;
   mv->prev_args = 0;
   mv->numejec = 0;
-  memset(mv->contexto, 0, 256);
+  memset(mv->contexto, 0, sizeof(mv->contexto));
   mv->contexto[0] = latO_contexto_crear(mv);
   mv->label_ctx = latO_contexto_crear(mv);
   mv->contexto[0]->marca = 0;
