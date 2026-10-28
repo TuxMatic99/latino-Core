@@ -27,6 +27,7 @@ THE SOFTWARE.
 #include "latino.h"
 #include "latmem.h"
 #include <string.h>
+#include <stdint.h>
 
 /* FNV-1a hash algorithm constants */
 #define FNV_OFFSET_BASIS 2166136261u
@@ -47,6 +48,10 @@ static unsigned int latH_hash_fnv1a(const char *key) {
 
 /* Resize hash table when load factor is exceeded */
 static void latH_resize(lat_mv *mv, hash_map *m, size_t new_capacity) {
+  if (new_capacity == 0 || new_capacity > SIZE_MAX / sizeof(lista *)) {
+    latC_error(mv, "Capacidad de diccionario fuera de rango");
+    return;
+  }
   lista **new_buckets =
       (lista **)latM_asignar(mv, new_capacity * sizeof(lista *));
   size_t i;
@@ -76,8 +81,10 @@ static void latH_resize(lat_mv *mv, hash_map *m, size_t new_capacity) {
           latL_agregar(mv, new_buckets[new_idx], hv);
         }
       }
-      /* Clean up old bucket list structure (but not the hash_val data) */
-      latL_limpiar(mv, list);
+    }
+    if (list != NULL) {
+      /* Las entradas ya pertenecen a new_buckets; liberar solo nodos y lista. */
+      latL_destruir(mv, list);
     }
   }
 
@@ -107,6 +114,20 @@ LATINO_API hash_map *latH_crear(lat_mv *mv) {
 
 LATINO_API void latH_asignar(lat_mv *mv, hash_map *m, const char *key,
                              void *val) {
+  /* Validar antes de reservar memoria o modificar la tabla. El limite es
+     en bytes UTF-8, incluido el terminador, no en caracteres visibles. */
+  if (key == NULL) {
+    latC_error(mv, "Clave de diccionario nula");
+    return;
+  }
+  size_t key_length = 0;
+  while (key_length < sizeof(((hash_val *)0)->llave) && key[key_length]) {
+    key_length++;
+  }
+  if (key_length == sizeof(((hash_val *)0)->llave)) {
+    latC_error(mv, "Clave de diccionario demasiado larga (maximo 63 bytes)");
+    return;
+  }
   unsigned int h = latH_hash_fnv1a(key);
   size_t idx = h % m->capacity;
 
@@ -133,7 +154,7 @@ LATINO_API void latH_asignar(lat_mv *mv, hash_map *m, const char *key,
 #if DEPURAR_MEM
   printf("latH_asignar.hv: %p\n", hv);
 #endif
-  strncpy(hv->llave, key, (strlen(key) + 1));
+  memcpy(hv->llave, key, key_length + 1);
   lat_objeto *obj = latO_crear(mv);
   setobj2obj(obj, val);
   hv->valor = obj;
@@ -143,6 +164,10 @@ LATINO_API void latH_asignar(lat_mv *mv, hash_map *m, const char *key,
   /* Check load factor and resize if necessary */
   double load_factor = (double)m->longitud / (double)m->capacity;
   if (load_factor > HASH_LOAD_FACTOR) {
+    if (m->capacity > SIZE_MAX / 2) {
+      latC_error(mv, "Capacidad de diccionario fuera de rango");
+      return;
+    }
     latH_resize(mv, m, m->capacity * 2);
   }
 }
