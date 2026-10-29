@@ -271,9 +271,8 @@ static void latSO_salir(lat_mv *mv) { (void)mv; exit(0); }
 
 static void latSO_cwd(lat_mv *mv) {
   char dir[1024];
-  getcwd(dir, sizeof(dir));
-  if (dir != NULL) {
-    latC_apilar(mv, latC_crear_cadena(mv, dir));
+  if (getcwd(dir, sizeof(dir)) != NULL) {
+    latC_apilar_string(mv, dir);
   } else {
     latC_apilar(mv, latO_nulo);
   };
@@ -321,7 +320,7 @@ static void latSO_operativo(lat_mv *mv) {
 }
 
 void latOS_veriones(lat_mv *mv, int i) {
-  unsigned long n;
+  unsigned long n = 0;
   Struct os_version;
   os_version = buscar_os_version();
   switch (i) {
@@ -334,9 +333,11 @@ void latOS_veriones(lat_mv *mv, int i) {
   case 3:
     n = os_version.osBuild;
     break;
+  default:
+    latC_apilar(mv, latO_nulo);
+    return;
   }
-  lat_objeto *tmp = latC_crear_numerico(mv, n);
-  latC_apilar(mv, tmp);
+  latC_apilar_double(mv, (double)n);
 }
 
 static void latSO_ver_mayor(lat_mv *mv) { latOS_veriones(mv, 1); }

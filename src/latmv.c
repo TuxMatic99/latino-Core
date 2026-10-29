@@ -144,11 +144,20 @@ static void igualdad(lat_mv *mv)
   break;
   case T_STR:
   {
+    /* Dos cadenas internadas se comparan sin convertir ni reservar buffers.
+       latC_astring usa strdup; liberar esa copia con latM_liberar descontaba
+       memoria que nunca se habia sumado al contador de la VM. */
+    if (b->tipo == T_STR) {
+      r = strcmp(latC_checar_cadena(mv, a), latC_checar_cadena(mv, b)) == 0
+              ? latO_verdadero : latO_falso;
+      latC_apilar(mv, r);
+      return;
+    }
     buffer = latC_astring(mv, b);
     r = strcmp(latC_checar_cadena(mv, a), buffer) == 0 ? latO_verdadero
                                                        : latO_falso;
     latC_apilar(mv, r);
-    latM_liberar(mv, buffer);
+    free(buffer);
     return;
   }
   break;
@@ -158,8 +167,8 @@ static void igualdad(lat_mv *mv)
     buffer2 = latC_astring(mv, b);
     r = !strcmp(buffer, buffer2) ? latO_verdadero : latO_falso;
     latC_apilar(mv, r);
-    latM_liberar(mv, buffer);
-    latM_liberar(mv, buffer2);
+    free(buffer);
+    free(buffer2);
     return;
   }
   }
@@ -194,10 +203,19 @@ static void diferente(lat_mv *mv)
   break;
   case T_STR:
   {
+    /* Dos cadenas internadas se comparan sin convertir ni reservar buffers.
+       latC_astring usa strdup; liberar esa copia con latM_liberar descontaba
+       memoria que nunca se habia sumado al contador de la VM. */
+    if (b->tipo == T_STR) {
+      r = strcmp(latC_checar_cadena(mv, a), latC_checar_cadena(mv, b)) != 0
+              ? latO_verdadero : latO_falso;
+      latC_apilar(mv, r);
+      return;
+    }
     buffer = latC_astring(mv, b);
     r = strcmp(latC_checar_cadena(mv, a), buffer) ? latO_verdadero : latO_falso;
     latC_apilar(mv, r);
-    latM_liberar(mv, buffer);
+    free(buffer);
     return;
   }
   break;
@@ -207,8 +225,8 @@ static void diferente(lat_mv *mv)
     buffer2 = latC_astring(mv, b);
     r = strcmp(buffer, buffer2) ? latO_verdadero : latO_falso;
     latC_apilar(mv, r);
-    latM_liberar(mv, buffer);
-    latM_liberar(mv, buffer2);
+    free(buffer);
+    free(buffer2);
     return;
   }
   }
@@ -294,7 +312,13 @@ static void y_logico(lat_mv *mv)
   {
     r = a;
   }
-  latC_apilar(mv, latO_clonar(mv, r));
+  lat_objeto *copia = latO_clonar(mv, r);
+  latC_apilar(mv, copia);
+#if !HABILITAR_GC
+  /* Se mantiene la semantica de clonado del operando seleccionado.
+     La pila copia el valor; el envoltorio temporal no tiene otro propietario. */
+  latM_liberar(mv, copia);
+#endif
 }
 
 static void o_logico(lat_mv *mv)
@@ -310,7 +334,13 @@ static void o_logico(lat_mv *mv)
   {
     r = b;
   }
-  latC_apilar(mv, latO_clonar(mv, r));
+  lat_objeto *copia = latO_clonar(mv, r);
+  latC_apilar(mv, copia);
+#if !HABILITAR_GC
+  /* Se mantiene la semantica de clonado del operando seleccionado.
+     La pila copia el valor; el envoltorio temporal no tiene otro propietario. */
+  latM_liberar(mv, copia);
+#endif
 }
 
 static void no_logico(lat_mv *mv)
@@ -688,7 +718,12 @@ LATINO_API void latC_apilar_char(lat_mv *mv, char c)
 
 LATINO_API void latC_apilar_string(lat_mv *mv, const char *str)
 {
-  setCadena(mv->tope, getCadena(latC_crear_cadena(mv, str)));
+  lat_objeto *temporal = latC_crear_cadena(mv, str);
+  setCadena(mv->tope, getCadena(temporal));
+#if !HABILITAR_GC
+  /* La cadena internada pertenece a la VM; solo se libera el envoltorio. */
+  latM_liberar(mv, temporal);
+#endif
   inc_pila(mv);
   checar_pila(mv);
 }
